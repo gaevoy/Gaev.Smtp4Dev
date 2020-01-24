@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,6 +26,14 @@ namespace Gaev.Smtp4Dev
             server.MessageReceived += (__, receivedArgs) =>
                 Task.Run(() =>
                     OnMessageReceivedAsync(receivedArgs.Message));
+            _ = Task.Factory.StartNew(async () =>
+            {
+                while (true)
+                {
+                    await Task.Delay(60_000, cancellation.Token);
+                    server.ClearReceivedEmail();
+                }
+            });
             await Host
                 .CreateDefaultBuilder(args)
                 .ConfigureWebHostDefaults(webBuilder => { webBuilder.UseStartup<Startup>(); })
@@ -36,25 +43,9 @@ namespace Gaev.Smtp4Dev
 
         static async Task OnMessageReceivedAsync(SmtpMessage message)
         {
-            var recipients = message.ToAddresses.Select(e => e.Address).ToArray();
-            var headers = message.Headers.AllKeys.ToDictionary(key => key, key => message.Headers[key]);
-            var messageInJson = JsonSerializer.Serialize(JsonSerializer.Serialize(new
-            {
-                from = message.FromAddress.Address,
-                to = recipients,
-                headers,
-                subject = headers.ContainsKey("Subject") ? message.Headers["Subject"] : null,
-                bodyAsText = message.MessageParts
-                    .Where(e => e.HeaderData.StartsWith("text/plain"))
-                    .Select(e => e.BodyData)
-                    .FirstOrDefault(),
-                bodyAsHtml = message.MessageParts
-                    .Where(e => e.HeaderData.StartsWith("text/html"))
-                    .Select(e => e.BodyData)
-                    .FirstOrDefault()
-            }));
-            foreach (var recipient in recipients)
-                await EmailsController.OnMessageReceived(recipient, messageInJson);
+            var messageInJson = JsonSerializer.Serialize(message.Data);
+            foreach (var recipient in message.ToAddresses)
+                await EmailsController.OnMessageReceived(recipient.Address, messageInJson);
         }
 
         class Startup
