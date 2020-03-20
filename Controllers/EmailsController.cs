@@ -5,7 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
-using Serilog.Core;
+using Serilog;
 
 namespace Gaev.Smtp4Dev.Controllers
 {
@@ -18,16 +18,15 @@ namespace Gaev.Smtp4Dev.Controllers
         public class ClientHandle
         {
             public string Ip { get; set; }
-            public string Ip2 { get; set; }
-            public int Port { get; set; }
+            public string Email { get; set; }
             public StreamWriter Response { get; set; }
         }
 
-        private static Logger Logger => Program.Logger;
+        private static ILogger Logger => Log.Logger;
 
         // GET api/emails/test@smtp4dev.gaevoy.com
         [HttpGet("{recipientEmail}")]
-        public async Task ListenToMessages(string recipientEmail)
+        public async Task ListenToMessages(string recipientEmail, string alias)
         {
             Response.Headers["Cache-Control"] = "no-cache"; // https://serverfault.com/a/801629
             Response.Headers["X-Accel-Buffering"] = "no";
@@ -37,21 +36,21 @@ namespace Gaev.Smtp4Dev.Controllers
             var client = new ClientHandle
             {
                 Ip = Request.Headers["X-Real-IP"].ToString(),
-                Port = HttpContext.Connection.RemotePort,
+                Email = alias,
                 Response = response
             };
             lock (clients)
                 clients.Add(client);
             await response.WriteAsync("event: connected\ndata:\n\n");
             await response.FlushAsync();
-            Logger.Information("Client connected {@cli}", new {client.Ip, client.Port});
+            Logger.Information("Client connected {@cli}", new {client.Ip, client.Email});
             await HttpContext.RequestAborted.AsTask();
             lock (clients)
                 clients.Remove(client);
-            Logger.Information("Client disconnected {@cli}", new {client.Ip, client.Port});
+            Logger.Information("Client disconnected {@cli}", new {client.Ip, client.Email});
         }
 
-        public static async Task OnMessageReceived(string recipientEmail, string messageInJson, Guid messageId)
+        public static async Task OnMessageReceived(string recipientEmail, string messageInJson, string messageId)
         {
             List<ClientHandle> SafeCopy(List<ClientHandle> streamWriters)
             {
@@ -66,13 +65,13 @@ namespace Gaev.Smtp4Dev.Controllers
                 {
                     await client.Response.WriteAsync("data: " + messageInJson + "\n\n");
                     await client.Response.FlushAsync();
-                    Logger.Information("Message sent {@cli}", new {client.Ip, client.Port, messageId});
+                    Logger.Information("Message sent {@cli}", new {client.Ip, client.Email, messageId});
                 }
                 catch (ObjectDisposedException)
                 {
                     lock (clients)
                         clients.Remove(client);
-                    Logger.Information("Client is disposed {@cli}", new {client.Ip, client.Port, messageId});
+                    Logger.Information("Client is disposed {@cli}", new {client.Ip, client.Email, messageId});
                 }
         }
     }

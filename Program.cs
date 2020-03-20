@@ -9,24 +9,26 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using netDumbster.smtp;
+using netDumbster.smtp.Logging;
 using Serilog;
-using Serilog.Core;
+using Serilog.Events;
 
 namespace Gaev.Smtp4Dev
 {
     public class Program
     {
-        public static Logger Logger = new LoggerConfiguration()
-            .WriteTo.Console()
-            .WriteTo.RollingFile("log-{Date}.txt")
-            .CreateLogger();
-
         static async Task Main(string[] args)
         {
+            Log.Logger = new LoggerConfiguration()
+                .WriteTo.Console()
+                .WriteTo.RollingFile("log-{Date}.txt")
+                //.MinimumLevel.Is(LogEventLevel.Debug)
+                .CreateLogger();
+            LogManager.GetLogger = type => new DumbsterLogger(Log.Logger.ForContext(type));
             var cancellation = new CancellationTokenSource();
             Console.CancelKeyPress += (__, e) =>
             {
-                Logger.Information("Stopping");
+                Log.Information("Stopping");
                 e.Cancel = true;
                 cancellation.Cancel();
             };
@@ -35,7 +37,7 @@ namespace Gaev.Smtp4Dev
             server.MessageReceived += (__, receivedArgs) =>
                 Task.Run(() =>
                     OnMessageReceivedAsync(receivedArgs.Message));
-            Logger.Information("Started");
+            Log.Information("Started");
             try
             {
                 await Host
@@ -46,19 +48,24 @@ namespace Gaev.Smtp4Dev
             }
             catch (Exception ex)
             {
-                Logger.Error(ex, "Stopping");
+                Log.Error(ex, "Stopping");
             }
             finally
             {
-                Logger.Information("Stopped");
-                Logger.Dispose();
+                Log.Information("Stopped");
+                Log.CloseAndFlush();
             }
         }
 
         static async Task OnMessageReceivedAsync(SmtpMessage message)
         {
-            var messageId = Guid.NewGuid();
-            Logger.Information("Message received {@msg}", new {messageId});
+            var messageId = Guid.NewGuid().ToString("N");
+            Log.Information("Message received {@msg}", new
+            {
+                messageId,
+                To = message.Headers["To"],
+                Subject = message.Headers["Subject"]
+            });
             var messageInJson = JsonSerializer.Serialize(message.Data);
             foreach (var recipient in message.ToAddresses)
                 await EmailsController.OnMessageReceived(recipient.Address, messageInJson, messageId);
