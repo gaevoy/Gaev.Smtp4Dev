@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using Gaev.Smtp4Dev.Controllers;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using netDumbster.smtp;
@@ -60,27 +59,24 @@ namespace Gaev.Smtp4Dev
         static async Task OnMessageReceivedAsync(SmtpMessage message)
         {
             var messageId = Guid.NewGuid().ToString("N");
-            Log.Information("Message received {@msg}", new
-            {
-                messageId,
-                To = message.Headers["To"],
-                Subject = message.Headers["Subject"]
-            });
             var messageInJson = JsonSerializer.Serialize(message.Data);
             foreach (var recipient in message.ToAddresses)
+            {
+                Log.Information("Message received {@msg}", new
+                {
+                    messageId,
+                    To = message.Headers["To"],
+                    RecipientEmail = recipient.Address.ToLower(),
+                    Subject = message.Headers["Subject"]
+                });
                 await EmailsController.OnMessageReceived(recipient.Address, messageInJson, messageId);
+            }
         }
 
         class Startup
         {
-            public void ConfigureServices(IServiceCollection services)
-            {
+            public void ConfigureServices(IServiceCollection services) =>
                 services.AddMvc();
-                services.Configure<ForwardedHeadersOptions>(options =>
-                {
-                    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor;
-                });
-            }
 
             public void Configure(IApplicationBuilder app, IWebHostEnvironment env) =>
                 app

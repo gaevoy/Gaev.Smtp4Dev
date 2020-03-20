@@ -18,7 +18,8 @@ namespace Gaev.Smtp4Dev.Controllers
         public class ClientHandle
         {
             public string Ip { get; set; }
-            public string Email { get; set; }
+            public string Alias { get; set; }
+            public string RecipientEmail { get; set; }
             public StreamWriter Response { get; set; }
         }
 
@@ -36,18 +37,19 @@ namespace Gaev.Smtp4Dev.Controllers
             var client = new ClientHandle
             {
                 Ip = Request.Headers["X-Real-IP"].ToString(),
-                Email = alias,
+                Alias = alias,
+                RecipientEmail = recipientEmail.ToLower(),
                 Response = response
             };
             lock (clients)
                 clients.Add(client);
             await response.WriteAsync("event: connected\ndata:\n\n");
             await response.FlushAsync();
-            Logger.Information("Client connected {@cli}", new {client.Ip, client.Email});
+            Logger.Information("Client connected {@cli}", new {client.Ip, client.Alias, client.RecipientEmail});
             await HttpContext.RequestAborted.AsTask();
             lock (clients)
                 clients.Remove(client);
-            Logger.Information("Client disconnected {@cli}", new {client.Ip, client.Email});
+            Logger.Information("Client disconnected {@cli}", new {client.Ip, client.Alias, client.RecipientEmail});
         }
 
         public static async Task OnMessageReceived(string recipientEmail, string messageInJson, string messageId)
@@ -65,13 +67,15 @@ namespace Gaev.Smtp4Dev.Controllers
                 {
                     await client.Response.WriteAsync("data: " + messageInJson + "\n\n");
                     await client.Response.FlushAsync();
-                    Logger.Information("Message sent {@cli}", new {client.Ip, client.Email, messageId});
+                    Logger.Information("Message sent {@cli}",
+                        new {client.Ip, client.Alias, client.RecipientEmail, messageId});
                 }
                 catch (ObjectDisposedException)
                 {
                     lock (clients)
                         clients.Remove(client);
-                    Logger.Information("Client is disposed {@cli}", new {client.Ip, client.Email, messageId});
+                    Logger.Information("Client is disposed {@cli}",
+                        new {client.Ip, client.Alias, client.RecipientEmail, messageId});
                 }
         }
     }
